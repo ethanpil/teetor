@@ -37,6 +37,13 @@
             <input type="text" class="form-control" id="model" placeholder="openai/whisper-1">
           </div>
           <div class="col-12">
+            <label for="providerOptions" class="form-label">Provider settings <span class="text-body-secondary">(JSON, optional)</span></label>
+            <textarea class="form-control font-monospace small" id="providerOptions" rows="2" spellcheck="false"
+                      placeholder='{"options": {"azure": {"diarization": {"enabled": true}}}}'></textarea>
+            <div class="form-text">Sent as the <code>provider</code> field. OpenRouter uses only the options for the provider that does the transcription.</div>
+            <div class="invalid-feedback">This is not a valid JSON object.</div>
+          </div>
+          <div class="col-12">
             <label for="audioFile" class="form-label">MP3 file</label>
             <div id="dropZone" class="drop-zone rounded p-3 text-center">
               <input type="file" class="form-control mb-2" id="audioFile" accept=".mp3,audio/mpeg">

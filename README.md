@@ -13,6 +13,18 @@ Live page: https://ethanpil.github.io/teetor/
 5. Click **Transcribe**. The page shows a spinner and a timer until the text comes back. To stop the request, click **Cancel**.
 6. Read and edit the text. Click **Download .txt** to save the text.
 
+## Provider settings
+
+You can type a JSON object in **Provider settings**. The page sends this object as the `provider` field of each request. OpenRouter sends only the options for the provider that does the transcription. For the provider names, see the endpoints API (`/api/v1/models/<model>/endpoints`).
+
+Example to identify speakers with Azure:
+
+```json
+{"options": {"azure": {"diarization": {"enabled": true}}}}
+```
+
+If the response has speaker labels, the page starts a new paragraph for each change of speaker (for example, `Speaker 0: ...`). If the page divides the file into parts, the provider gives the speaker numbers again for each part. Thus, `Speaker 0` in one part is possibly not the same person as `Speaker 0` in a different part.
+
 ## Large files
 
 OpenRouter does not accept large uploads. Also, providers stop a request after approximately 60 seconds of processing. Thus, the page divides an MP3 file that is larger than 12 MB into parts of approximately 8 MB (approximately 8 minutes at 128 kbps). The page sends the parts one after the other and joins the text.

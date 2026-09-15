@@ -7,7 +7,7 @@ const els = {
   label: $('transcribeLabel'), error: $('error'), results: $('results'),
   statCards: $('statCards'), statDetails: $('statDetails'), transcript: $('transcript'),
   copy: $('copy'), download: $('download'), progress: $('progress'), progressText: $('progressText'),
-  timer: $('timer'), cancel: $('cancel'), progressBar: $('progressBar'),
+  timer: $('timer'), cancel: $('cancel'), progressBar: $('progressBar'), providerOptions: $('providerOptions'),
 };
 
 let header = '';       // Header text for the current file ('' if no result yet)
@@ -34,6 +34,25 @@ els.includeHeader.checked = localStorage.getItem('teetor.includeHeader') !== 'fa
 els.apiKey.addEventListener('input', () => { localStorage.setItem('teetor.apiKey', els.apiKey.value.trim()); updateButton(); });
 els.model.addEventListener('input', () => { localStorage.setItem('teetor.model', els.model.value.trim()); updateButton(); });
 els.file.addEventListener('change', updateButton);
+
+els.providerOptions.value = localStorage.getItem('teetor.providerOptions') || '';
+els.providerOptions.addEventListener('input', () => {
+  localStorage.setItem('teetor.providerOptions', els.providerOptions.value);
+  els.providerOptions.classList.toggle('is-invalid', parseProvider() === null);
+});
+els.providerOptions.dispatchEvent(new Event('input'));
+
+// Returns the provider settings object, undefined if the field is empty, or null if the JSON is not valid
+function parseProvider() {
+  const value = els.providerOptions.value.trim();
+  if (!value) return undefined;
+  try {
+    const obj = JSON.parse(value);
+    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : null;
+  } catch {
+    return null;
+  }
+}
 
 // Drag and drop
 const dropZone = $('dropZone');
@@ -192,7 +211,7 @@ async function splitMp3(file) {
   return parts;
 }
 
-async function transcribePart(blob) {
+async function transcribePart(blob, provider) {
   const data = await readBase64(blob);
   const res = await fetch(API_URL, {
     signal: controller.signal,
@@ -202,7 +221,7 @@ async function transcribePart(blob) {
       'Content-Type': 'application/json',
       'X-Title': 'Teetor',
     },
-    body: JSON.stringify({ model: els.model.value.trim(), input_audio: { data, format: 'mp3' } }),
+    body: JSON.stringify({ model: els.model.value.trim(), input_audio: { data, format: 'mp3' }, provider }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error?.message || `HTTP ${res.status} ${res.statusText}`);
@@ -212,6 +231,8 @@ async function transcribePart(blob) {
 // Transcribe
 els.transcribe.addEventListener('click', async () => {
   const file = els.file.files[0];
+  const provider = parseProvider();
+  if (provider === null) return showError('Provider settings: this is not a valid JSON object.');
   if (unsaved && !confirm('Start a new transcription?\n\nThe current transcript is not downloaded or copied. It will be lost.')) return;
   showError('');
   setBusy(true);
@@ -235,7 +256,7 @@ els.transcribe.addEventListener('click', async () => {
       const prefix = parts.length > 1 ? `Part ${i + 1} of ${parts.length}: ` : '';
       els.progressText.textContent = `${prefix}waiting for OpenRouter…`;
       els.progressBar.style.width = `${((i + 1) / parts.length) * 100}%`;
-      results.push(await transcribePart(parts[i]));
+      results.push(await transcribePart(parts[i], provider));
     }
   } catch (err) {
     failure = err;
@@ -251,7 +272,8 @@ els.transcribe.addEventListener('click', async () => {
   if (results.length) {
     baseName = file.name.replace(/\.[^.]+$/, '');
     header = `File: ${file.name}\nDate: ${formatDate(new Date(file.lastModified))}\n\n`;
-    els.transcript.value = results.map((r) => (r.body.text || '').trim()).join(' ');
+    const hasSpeakers = results.some((r) => r.body.segments?.some((s) => s.speaker != null));
+    els.transcript.value = results.map((r) => partText(r.body)).join(hasSpeakers ? '\n\n' : ' ');
     applyHeader();
     unsaved = true;
     renderStats(results, file, elapsed, parts.length);
@@ -274,6 +296,20 @@ els.transcribe.addEventListener('click', async () => {
   }
 });
 
+// Returns the text of one part. If the segments have speaker labels, each change of speaker starts a new paragraph.
+function partText(body) {
+  const segments = body.segments || [];
+  if (!segments.some((s) => s.speaker != null)) return (body.text || '').trim();
+  const turns = [];
+  for (const s of segments) {
+    const text = (s.text || '').trim();
+    const last = turns[turns.length - 1];
+    if (last && last.speaker === s.speaker) last.text += ' ' + text;
+    else turns.push({ speaker: s.speaker, text });
+  }
+  return turns.map((t) => `Speaker ${t.speaker}: ${t.text}`).join('\n\n');
+}
+
 function renderStats(results, file, elapsed, totalParts) {
   // Add the usage values of all parts. A value is null if no part has it.
   const u = {};
@@ -282,7 +318,7 @@ function renderStats(results, file, elapsed, totalParts) {
     u[key] = values.length ? values.reduce((a, v) => a + v, 0) : null;
   }
   const headerValues = (name) => [...new Set(results.map((r) => r.headers.get(name)).filter(Boolean))].join(', ') || null;
-  const text = els.transcript.value.slice(els.transcript.value.startsWith(header) ? header.length : 0);
+  const text = results.map((r) => (r.body.text || '').trim()).join(' ');
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const speed = u.seconds && elapsed ? u.seconds / elapsed : null;
   const costPerMin = u.cost != null && u.seconds ? (u.cost / u.seconds) * 60 : null;
