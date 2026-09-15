@@ -13,6 +13,12 @@ Live page: https://ethanpil.github.io/teetor/
 5. Click **Transcribe**. The page shows a spinner and a timer until the text comes back. To stop the request, click **Cancel**.
 6. Read and edit the text. Click **Download .txt** to save the text.
 
+## Large files
+
+OpenRouter does not accept large uploads. Also, providers stop a request after approximately 60 seconds of processing. Thus, the page divides an MP3 file that is larger than 12 MB into parts of approximately 8 MB (approximately 8 minutes at 128 kbps). Each part starts on an MP3 frame. The page sends the parts one after the other and joins the text. A word at the boundary between two parts can be incorrect.
+
+If a part fails, the page shows the text of the parts that are finished.
+
 ## Header
 
 The **Add filename and file date/time** switch is on by default. When the switch is on, the text starts with the filename and the date and time of the MP3 file.

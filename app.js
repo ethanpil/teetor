@@ -7,7 +7,7 @@ const els = {
   label: $('transcribeLabel'), error: $('error'), results: $('results'),
   statCards: $('statCards'), statDetails: $('statDetails'), transcript: $('transcript'),
   copy: $('copy'), download: $('download'), progress: $('progress'), progressText: $('progressText'),
-  timer: $('timer'), cancel: $('cancel'),
+  timer: $('timer'), cancel: $('cancel'), progressBar: $('progressBar'),
 };
 
 let header = '';       // Header text for the current file ('' if no result yet)
@@ -21,7 +21,7 @@ window.addEventListener('beforeunload', (e) => {
 });
 els.transcript.addEventListener('input', () => (unsaved = true));
 els.cancel.addEventListener('click', () => {
-  if (controller && confirm('Cancel the transcription?\n\nThe result will be lost. OpenRouter can still charge for the request.')) {
+  if (controller && confirm('Cancel the transcription?\n\nThe text of parts that are not finished will be lost. OpenRouter can still charge for the current request.')) {
     controller.abort();
   }
 });
@@ -107,6 +107,50 @@ function applyHeader() {
   if (!els.includeHeader.checked && text.startsWith(header)) els.transcript.value = text.slice(header.length);
 }
 
+// Split large files into parts. OpenRouter rejects large uploads (HTTP 413), and
+// providers time out after approximately 60 s of processing for each request.
+// 8 MB is approximately 8 minutes of 128 kbps audio.
+const PART_BYTES = 8 * 1024 * 1024;
+
+// Returns the position of the first MP3 frame header at or after pos
+async function findFrame(file, pos) {
+  const b = new Uint8Array(await file.slice(pos, pos + 65536).arrayBuffer());
+  for (let i = 0; i + 2 < b.length; i++) {
+    if (b[i] === 0xFF && (b[i + 1] & 0xE0) === 0xE0 && (b[i + 1] >> 3 & 3) !== 1 && (b[i + 1] >> 1 & 3) !== 0 &&
+        (b[i + 2] >> 4) !== 15 && (b[i + 2] >> 4) !== 0 && (b[i + 2] >> 2 & 3) !== 3) return pos + i;
+  }
+  return pos;
+}
+
+// Splits the file into parts that start on MP3 frame headers
+async function splitMp3(file) {
+  const parts = [];
+  let start = 0;
+  while (start < file.size) {
+    const end = file.size - start > PART_BYTES * 1.5 ? await findFrame(file, start + PART_BYTES) : file.size;
+    parts.push(file.slice(start, end));
+    start = end;
+  }
+  return parts;
+}
+
+async function transcribePart(blob) {
+  const data = await readBase64(blob);
+  const res = await fetch(API_URL, {
+    signal: controller.signal,
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${els.apiKey.value.trim()}`,
+      'Content-Type': 'application/json',
+      'X-Title': 'Teetor',
+    },
+    body: JSON.stringify({ model: els.model.value.trim(), input_audio: { data, format: 'mp3' } }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error?.message || `HTTP ${res.status} ${res.statusText}`);
+  return { body, headers: res.headers };
+}
+
 // Transcribe
 els.transcribe.addEventListener('click', async () => {
   const file = els.file.files[0];
@@ -123,52 +167,70 @@ els.transcribe.addEventListener('click', async () => {
   tick();
   const timer = setInterval(tick, 100);
 
+  const results = [];
+  let parts = [];
+  let failure = null;
   try {
     els.progressText.textContent = 'Reading file…';
-    const data = await readBase64(file);
-    els.progressText.textContent = 'Waiting for OpenRouter…';
-    const res = await fetch(API_URL, {
-      signal: controller.signal,
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${els.apiKey.value.trim()}`,
-        'Content-Type': 'application/json',
-        'X-Title': 'Teetor',
-      },
-      body: JSON.stringify({ model: els.model.value.trim(), input_audio: { data, format: 'mp3' } }),
-    });
-    const elapsed = (performance.now() - started) / 1000;
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error?.message || `HTTP ${res.status} ${res.statusText}`);
-
-    baseName = file.name.replace(/\.[^.]+$/, '');
-    header = `File: ${file.name}\nDate: ${formatDate(new Date(file.lastModified))}\n\n`;
-    els.transcript.value = body.text || '';
-    applyHeader();
-    unsaved = true;
-
-    renderStats(body, file, elapsed, res.headers);
-    els.results.classList.remove('d-none');
-    els.results.scrollIntoView({ behavior: 'smooth' });
+    parts = await splitMp3(file);
+    for (let i = 0; i < parts.length; i++) {
+      const prefix = parts.length > 1 ? `Part ${i + 1} of ${parts.length}: ` : '';
+      els.progressText.textContent = `${prefix}waiting for OpenRouter…`;
+      els.progressBar.style.width = `${((i + 1) / parts.length) * 100}%`;
+      results.push(await transcribePart(parts[i]));
+    }
   } catch (err) {
-    showError(err.name === 'AbortError' ? 'Transcription cancelled.' : err.message);
+    failure = err;
   } finally {
     controller = null;
     clearInterval(timer);
     setBusy(false);
     updateButton();
   }
+  const elapsed = (performance.now() - started) / 1000;
+
+  // Show the text of the finished parts, also when a later part failed
+  if (results.length) {
+    baseName = file.name.replace(/\.[^.]+$/, '');
+    header = `File: ${file.name}\nDate: ${formatDate(new Date(file.lastModified))}\n\n`;
+    els.transcript.value = results.map((r) => (r.body.text || '').trim()).join(' ');
+    applyHeader();
+    unsaved = true;
+    renderStats(results, file, elapsed, parts.length);
+    els.results.classList.remove('d-none');
+    if (!failure) els.results.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  if (failure) {
+    let msg;
+    if (failure.name === 'AbortError') msg = 'Transcription cancelled.';
+    else {
+      // fetch() gives a TypeError when the browser blocks or loses the response
+      msg = failure instanceof TypeError
+        ? `The browser did not get a readable response from OpenRouter (network problem or timeout). Browser message: ${failure.message}.`
+        : `${failure.message.replace(/\.?$/, '.')}`;
+      if (parts.length > 1) msg = `Part ${results.length + 1} of ${parts.length} failed: ${msg}`;
+    }
+    if (results.length) msg += ` The transcript below has only ${results.length} of ${parts.length} parts.`;
+    showError(msg);
+  }
 });
 
-function renderStats(body, file, elapsed, headers) {
-  const u = body.usage || {};
-  const text = body.text || '';
+function renderStats(results, file, elapsed, totalParts) {
+  // Add the usage values of all parts. A value is null if no part has it.
+  const u = {};
+  for (const key of ['seconds', 'input_tokens', 'output_tokens', 'total_tokens', 'cost']) {
+    const values = results.map((r) => r.body.usage?.[key]).filter((v) => v != null);
+    u[key] = values.length ? values.reduce((a, v) => a + v, 0) : null;
+  }
+  const headerValues = (name) => [...new Set(results.map((r) => r.headers.get(name)).filter(Boolean))].join(', ') || null;
+  const text = els.transcript.value.slice(els.transcript.value.startsWith(header) ? header.length : 0);
   const words = text.trim() ? text.trim().split(/\s+/).length : 0;
   const speed = u.seconds && elapsed ? u.seconds / elapsed : null;
   const costPerMin = u.cost != null && u.seconds ? (u.cost / u.seconds) * 60 : null;
 
   const cards = [
-    ['Audio length', u.seconds != null ? formatDuration(u.seconds) : '—', u.seconds != null ? `${u.seconds} s` : ''],
+    ['Audio length', u.seconds != null ? formatDuration(u.seconds) : '—', u.seconds != null ? `${u.seconds.toFixed(1)} s` : ''],
     ['Processing time', `${elapsed.toFixed(1)} s`, speed ? `${speed.toFixed(1)}× real time` : ''],
     ['Cost', u.cost != null ? `$${u.cost.toFixed(6)}` : '—', costPerMin != null ? `$${costPerMin.toFixed(5)} / audio min` : ''],
     ['Words', num(words), `${num(text.length)} characters`],
@@ -188,14 +250,15 @@ function renderStats(body, file, elapsed, headers) {
 
   const details = [
     ['Model', els.model.value.trim()],
-    ['Provider', headers.get('X-Provider-Name')],
+    ['Provider', headerValues('X-Provider-Name')],
+    ['Parts', totalParts > 1 ? `${results.length} of ${totalParts}` : null],
     ['Input tokens', num(u.input_tokens)],
     ['Output tokens', num(u.output_tokens)],
     ['Total tokens', num(u.total_tokens)],
     ['File', `${file.name} (${formatBytes(file.size)})`],
     ['File date', formatDate(new Date(file.lastModified))],
     ['Words per minute', u.seconds ? num(Math.round(words / (u.seconds / 60))) : null],
-    ['Generation ID', headers.get('X-Generation-Id')],
+    [results.length > 1 ? 'Generation IDs' : 'Generation ID', headerValues('X-Generation-Id')],
   ];
   els.statDetails.innerHTML = '';
   for (const [label, value] of details) {
