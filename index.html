@@ -56,6 +56,21 @@
             </button>
           </div>
         </div>
+        <div class="border rounded p-3 mt-3 d-none" id="progress">
+          <div class="d-flex align-items-center gap-3">
+            <div class="spinner-border text-primary flex-shrink-0" role="status"></div>
+            <div class="flex-grow-1">
+              <div class="d-flex justify-content-between align-items-baseline gap-2">
+                <span id="progressText"></span>
+                <span class="font-monospace fs-5" id="timer">0:00.0</span>
+              </div>
+              <div class="progress mt-1" style="height: 6px">
+                <div class="progress-bar progress-bar-striped progress-bar-animated w-100"></div>
+              </div>
+            </div>
+            <button class="btn btn-outline-danger flex-shrink-0" type="button" id="cancel">Cancel</button>
+          </div>
+        </div>
         <div class="alert alert-danger mt-3 mb-0 d-none" id="error"></div>
         <p class="form-text mb-0 mt-3">Your key and settings stay in this browser (localStorage). The audio goes directly to OpenRouter.</p>
       </div>

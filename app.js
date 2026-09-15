@@ -6,11 +6,25 @@ const els = {
   includeHeader: $('includeHeader'), transcribe: $('transcribe'), spinner: $('spinner'),
   label: $('transcribeLabel'), error: $('error'), results: $('results'),
   statCards: $('statCards'), statDetails: $('statDetails'), transcript: $('transcript'),
-  copy: $('copy'), download: $('download'),
+  copy: $('copy'), download: $('download'), progress: $('progress'), progressText: $('progressText'),
+  timer: $('timer'), cancel: $('cancel'),
 };
 
 let header = '';       // Header text for the current file ('' if no result yet)
 let baseName = 'transcript';
+let controller = null; // AbortController while a request is in progress
+let unsaved = false;   // True when the transcript is not downloaded or copied
+
+// Warn before the page closes if data can be lost
+window.addEventListener('beforeunload', (e) => {
+  if (controller || unsaved) e.preventDefault();
+});
+els.transcript.addEventListener('input', () => (unsaved = true));
+els.cancel.addEventListener('click', () => {
+  if (controller && confirm('Cancel the transcription?\n\nThe result will be lost. OpenRouter can still charge for the request.')) {
+    controller.abort();
+  }
+});
 
 // Preferences
 els.apiKey.value = localStorage.getItem('teetor.apiKey') || '';
@@ -76,7 +90,8 @@ function readBase64(file) {
 function setBusy(busy) {
   els.transcribe.disabled = busy;
   els.spinner.classList.toggle('d-none', !busy);
-  if (!busy) els.label.textContent = 'Transcribe';
+  els.label.textContent = busy ? 'Transcribing…' : 'Transcribe';
+  els.progress.classList.toggle('d-none', !busy);
 }
 
 function showError(msg) {
@@ -95,18 +110,25 @@ function applyHeader() {
 // Transcribe
 els.transcribe.addEventListener('click', async () => {
   const file = els.file.files[0];
+  if (unsaved && !confirm('Start a new transcription?\n\nThe current transcript is not downloaded or copied. It will be lost.')) return;
   showError('');
   setBusy(true);
+  controller = new AbortController();
 
   const started = performance.now();
-  const timer = setInterval(() => {
-    els.label.textContent = `Transcribing… ${Math.floor((performance.now() - started) / 1000)}s`;
-  }, 250);
+  const tick = () => {
+    const s = (performance.now() - started) / 1000;
+    els.timer.textContent = `${Math.floor(s / 60)}:${pad(Math.floor(s % 60))}.${Math.floor((s * 10) % 10)}`;
+  };
+  tick();
+  const timer = setInterval(tick, 100);
 
   try {
-    els.label.textContent = 'Reading file…';
+    els.progressText.textContent = 'Reading file…';
     const data = await readBase64(file);
+    els.progressText.textContent = 'Waiting for OpenRouter…';
     const res = await fetch(API_URL, {
+      signal: controller.signal,
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${els.apiKey.value.trim()}`,
@@ -123,13 +145,15 @@ els.transcribe.addEventListener('click', async () => {
     header = `File: ${file.name}\nDate: ${formatDate(new Date(file.lastModified))}\n\n`;
     els.transcript.value = body.text || '';
     applyHeader();
+    unsaved = true;
 
     renderStats(body, file, elapsed, res.headers);
     els.results.classList.remove('d-none');
     els.results.scrollIntoView({ behavior: 'smooth' });
   } catch (err) {
-    showError(err.message);
+    showError(err.name === 'AbortError' ? 'Transcription cancelled.' : err.message);
   } finally {
+    controller = null;
     clearInterval(timer);
     setBusy(false);
     updateButton();
@@ -193,10 +217,12 @@ els.download.addEventListener('click', () => {
   a.download = `${baseName}.txt`;
   a.click();
   URL.revokeObjectURL(a.href);
+  unsaved = false;
 });
 
 els.copy.addEventListener('click', async () => {
   await navigator.clipboard.writeText(els.transcript.value);
+  unsaved = false;
   els.copy.textContent = 'Copied';
   setTimeout(() => (els.copy.textContent = 'Copy'), 1500);
 });
