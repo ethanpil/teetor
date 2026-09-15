@@ -8,10 +8,14 @@ Live page: https://ethanpil.github.io/teetor/
 
 1. Open the page.
 2. Type your OpenRouter API key.
-3. Type the model name (for example, `openai/whisper-1`).
+3. Type the model name (for example, `openai/whisper-1`), or select a saved model.
 4. Select an MP3 file, or drag the file onto the page.
 5. Click **Transcribe**. The page shows a spinner and a timer until the text comes back. To stop the request, click **Cancel**.
 6. Read and edit the text. Click **Download .txt** to save the text.
+
+## Saved models
+
+After a transcription gives text, the page saves the model name. When you type in the model field, the page suggests saved models. To see all saved models, click the **▾** button next to the field. Click a model to select it. Click **X** to remove a model from the list.
 
 ## Provider settings
 
@@ -27,8 +31,10 @@ Rules:
 
 - The `provider.` at the start of a path is optional.
 - The values `true`, `false`, `null`, numbers, `"quoted text"` and `[lists]` are JSON values. All other values are text.
-- The page ignores empty lines and lines that start with `#`.
+- The page ignores empty lines and lines that start with `#`. To stop one option, put `#` at the start of its line.
 - You can also type a full JSON object.
+
+To stop all provider settings without deleting them, set the **Send** switch to off.
 
 If the response has speaker labels, the page starts a new paragraph for each change of speaker (for example, `Speaker 0: ...`). If the page divides the file into parts, the provider gives the speaker numbers again for each part. Thus, `Speaker 0` in one part is possibly not the same person as `Speaker 0` in a different part.
 
@@ -65,7 +71,7 @@ After the transcription, the page shows these values:
 
 ## Data
 
-The page keeps your API key, model name and header setting in the local storage of your browser. The page sends the audio directly to OpenRouter. There is no other server.
+The page keeps your API key, model name, saved models, provider settings and switch settings in the local storage of your browser. The page sends the audio directly to OpenRouter. There is no other server.
 
 ## Files
 
