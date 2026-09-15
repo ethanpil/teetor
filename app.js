@@ -74,16 +74,24 @@ modelMenuButton.addEventListener('click', () => showModelMenu(!modelMenu.classLi
 document.addEventListener('click', (e) => { if (!modelPicker.contains(e.target)) showModelMenu(false); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') showModelMenu(false); });
 
+// Provider settings
+const providerEnabled = $('providerEnabled');
 els.providerOptions.value = localStorage.getItem('teetor.providerOptions') || '';
-els.providerOptions.addEventListener('input', () => {
+providerEnabled.checked = localStorage.getItem('teetor.providerEnabled') !== 'false';
+
+function updateProvider() {
   localStorage.setItem('teetor.providerOptions', els.providerOptions.value);
+  localStorage.setItem('teetor.providerEnabled', providerEnabled.checked);
   let provider, error = '';
   try { provider = parseProvider(); } catch (err) { error = err.message; }
   els.providerOptions.classList.toggle('is-invalid', !!error);
+  els.providerOptions.classList.toggle('opacity-50', !providerEnabled.checked);
   $('providerError').textContent = error;
-  $('providerPreview').textContent = provider ? `provider: ${JSON.stringify(provider)}` : '';
-});
-els.providerOptions.dispatchEvent(new Event('input'));
+  $('providerPreview').textContent = !provider ? '' : providerEnabled.checked ? `provider: ${JSON.stringify(provider)}` : 'Not sent: the Send switch is off.';
+}
+els.providerOptions.addEventListener('input', updateProvider);
+providerEnabled.addEventListener('change', updateProvider);
+updateProvider();
 
 // Reads the provider settings. Each line is "path.to.option = value", for example
 // "options.azure.diarization.enabled = true". A JSON object is also accepted.
@@ -106,7 +114,7 @@ function parseProvider() {
     const value = line.slice(eq + 1).trim();
     try { obj[keys.at(-1)] = JSON.parse(value); } catch { obj[keys.at(-1)] = value; }
   }
-  return provider;
+  return Object.keys(provider).length ? provider : undefined;
 }
 
 // Drag and drop
@@ -287,7 +295,9 @@ async function transcribePart(blob, provider) {
 els.transcribe.addEventListener('click', async () => {
   const file = els.file.files[0];
   let provider;
-  try { provider = parseProvider(); } catch (err) { return showError(`Provider settings: ${err.message}`); }
+  if (providerEnabled.checked) {
+    try { provider = parseProvider(); } catch (err) { return showError(`Provider settings: ${err.message}`); }
+  }
   if (unsaved && !confirm('Start a new transcription?\n\nThe current transcript is not downloaded or copied. It will be lost.')) return;
   showError('');
   setBusy(true);
