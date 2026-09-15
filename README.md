@@ -15,7 +15,9 @@ Live page: https://ethanpil.github.io/teetor/
 
 ## Large files
 
-OpenRouter does not accept large uploads. Also, providers stop a request after approximately 60 seconds of processing. Thus, the page divides an MP3 file that is larger than 12 MB into parts of approximately 8 MB (approximately 8 minutes at 128 kbps). Each part starts on an MP3 frame. The page sends the parts one after the other and joins the text. A word at the boundary between two parts can be incorrect.
+OpenRouter does not accept large uploads. Also, providers stop a request after approximately 60 seconds of processing. Thus, the page divides an MP3 file that is larger than 12 MB into parts of approximately 8 MB (approximately 8 minutes at 128 kbps). The page sends the parts one after the other and joins the text.
+
+To prevent a split in a word, the page decodes approximately 38 seconds of audio around each split point. It finds the quietest 500 ms and splits the file at the MP3 frame at that time. If the audio has no pause, the split can still be in a word.
 
 If a part fails, the page shows the text of the parts that are finished.
 

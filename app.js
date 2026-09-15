@@ -111,23 +111,81 @@ function applyHeader() {
 // providers time out after approximately 60 s of processing for each request.
 // 8 MB is approximately 8 minutes of 128 kbps audio.
 const PART_BYTES = 8 * 1024 * 1024;
+// Audio around each split point that the page examines for a pause (approximately 38 s of 128 kbps audio)
+const WINDOW_BYTES = 600 * 1024;
 
-// Returns the position of the first MP3 frame header at or after pos
+const BITRATES = { 1: [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320], 2: [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160] };
+const SAMPLE_RATES = { 3: [44100, 48000, 32000], 2: [22050, 24000, 16000], 0: [11025, 12000, 8000] };
+
+// Returns the length, samples and sample rate of the MP3 frame at b[i], or null if there is no frame header at b[i]
+function frameInfo(b, i) {
+  if (b[i] !== 0xFF || (b[i + 1] & 0xE0) !== 0xE0) return null;
+  const version = b[i + 1] >> 3 & 3, layer = b[i + 1] >> 1 & 3;
+  const bitrateIndex = b[i + 2] >> 4, rateIndex = b[i + 2] >> 2 & 3;
+  if (version === 1 || layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) return null;
+  const bitrate = BITRATES[version === 3 ? 1 : 2][bitrateIndex] * 1000;
+  const rate = SAMPLE_RATES[version][rateIndex];
+  const samples = version === 3 ? 1152 : 576;
+  return { length: Math.floor(samples / 8 * bitrate / rate) + (b[i + 2] >> 1 & 1), samples, rate };
+}
+
+// Returns the position of the first MP3 frame at or after pos. The next frame must also be valid.
 async function findFrame(file, pos) {
   const b = new Uint8Array(await file.slice(pos, pos + 65536).arrayBuffer());
-  for (let i = 0; i + 2 < b.length; i++) {
-    if (b[i] === 0xFF && (b[i + 1] & 0xE0) === 0xE0 && (b[i + 1] >> 3 & 3) !== 1 && (b[i + 1] >> 1 & 3) !== 0 &&
-        (b[i + 2] >> 4) !== 15 && (b[i + 2] >> 4) !== 0 && (b[i + 2] >> 2 & 3) !== 3) return pos + i;
+  for (let i = 0; i + 3 < b.length; i++) {
+    const f = frameInfo(b, i);
+    if (f && frameInfo(b, i + f.length)) return pos + i;
   }
   return pos;
 }
 
-// Splits the file into parts that start on MP3 frame headers
+// Returns a split position near pos at the quietest 500 ms of the audio, so that the split is not in a word
+async function findQuietSplit(file, pos) {
+  try {
+    const from = await findFrame(file, pos - WINDOW_BYTES / 2);
+    const b = new Uint8Array(await file.slice(from, from + WINDOW_BYTES).arrayBuffer());
+    const audio = await new OfflineAudioContext(1, 1, 44100).decodeAudioData(b.slice().buffer);
+
+    // Energy of each 50 ms block
+    const samples = audio.getChannelData(0);
+    const block = Math.round(audio.sampleRate / 20);
+    const energy = [];
+    for (let i = 0; i + block <= samples.length; i += block) {
+      let sum = 0;
+      for (let j = i; j < i + block; j++) sum += samples[j] * samples[j];
+      energy.push(sum);
+    }
+
+    // Quietest 10 blocks. Ignore the first and last 10 % of the window, because decoding there is not reliable.
+    const size = 10;
+    let best = -1, bestSum = Infinity;
+    for (let i = Math.floor(energy.length * 0.1); i + size <= Math.ceil(energy.length * 0.9); i++) {
+      const sum = energy.slice(i, i + size).reduce((a, v) => a + v, 0);
+      if (sum < bestSum) { bestSum = sum; best = i; }
+    }
+    if (best < 0) return findFrame(file, pos);
+    const quiet = (best + size / 2) * block / audio.sampleRate;
+
+    // Walk the frames to the first frame that starts at the quiet time
+    let i = 0, t = 0;
+    while (t < quiet) {
+      const f = frameInfo(b, i);
+      if (!f) return findFrame(file, from + Math.round(quiet / audio.duration * b.length));
+      t += f.samples / f.rate;
+      i += f.length;
+    }
+    return from + i;
+  } catch {
+    return findFrame(file, pos);
+  }
+}
+
+// Splits the file into parts that start on MP3 frames at pauses in the audio
 async function splitMp3(file) {
   const parts = [];
   let start = 0;
   while (start < file.size) {
-    const end = file.size - start > PART_BYTES * 1.5 ? await findFrame(file, start + PART_BYTES) : file.size;
+    const end = file.size - start > PART_BYTES * 1.5 ? await findQuietSplit(file, start + PART_BYTES) : file.size;
     parts.push(file.slice(start, end));
     start = end;
   }
