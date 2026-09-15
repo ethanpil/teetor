@@ -46,7 +46,7 @@ To prevent a split in a word, the page decodes approximately 38 seconds of audio
 
 If a part gets a rate limit error (HTTP 429) or a server error (HTTP 5xx), the page waits and tries again. It waits 5, 15, 30 and 60 seconds before the retries. The progress panel shows the time until the next retry. The page does not try again for other errors, for example not enough credits.
 
-If a part fails, the page shows the text of the parts that are finished.
+If a part fails, the page shows the text of the parts that are finished. To continue, click **Resume … from part N**. The page does not send the finished parts again, thus you do not pay for them again. Before you click **Resume**, you can change the model, the provider settings or the API key (for example, after you add credits). If you changed the transcript text, the page asks you to confirm, because Resume makes the transcript again.
 
 ## Header
 

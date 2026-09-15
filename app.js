@@ -8,6 +8,7 @@ const els = {
   statCards: $('statCards'), statDetails: $('statDetails'), transcript: $('transcript'),
   copy: $('copy'), download: $('download'), progress: $('progress'), progressText: $('progressText'),
   timer: $('timer'), cancel: $('cancel'), progressBar: $('progressBar'), providerOptions: $('providerOptions'),
+  resume: $('resume'),
 };
 
 let header = '';       // Header text for the current file ('' if no result yet)
@@ -135,7 +136,9 @@ dropZone.addEventListener('drop', (e) => {
 });
 els.includeHeader.addEventListener('change', () => {
   localStorage.setItem('teetor.includeHeader', els.includeHeader.checked);
+  const notEdited = els.transcript.value === shownText;
   applyHeader();
+  if (notEdited) shownText = els.transcript.value;
 });
 els.toggleKey.addEventListener('click', () => {
   const hidden = els.apiKey.type === 'password';
@@ -310,14 +313,35 @@ function wait(ms) {
   });
 }
 
+// The last transcription that did not finish: { file, parts, results, elapsed }. Resume continues it.
+let job = null;
+let shownText = ''; // Transcript text as the page last set it, to find edits before a resume
+
+// Returns the provider settings to send, or throws an error that tells the user what is wrong
+function providerToSend() {
+  if (!providerEnabled.checked) return undefined;
+  try { return parseProvider(); } catch (err) { throw new Error(`Provider settings: ${err.message}`); }
+}
+
 // Transcribe
 els.transcribe.addEventListener('click', async () => {
-  const file = els.file.files[0];
   let provider;
-  if (providerEnabled.checked) {
-    try { provider = parseProvider(); } catch (err) { return showError(`Provider settings: ${err.message}`); }
-  }
+  try { provider = providerToSend(); } catch (err) { return showError(err.message); }
   if (unsaved && !confirm('Start a new transcription?\n\nThe current transcript is not downloaded or copied. It will be lost.')) return;
+  await run({ file: els.file.files[0], parts: null, results: [], elapsed: 0 }, provider);
+});
+
+els.resume.addEventListener('click', async () => {
+  let provider;
+  try { provider = providerToSend(); } catch (err) { return showError(err.message); }
+  if (els.transcript.value !== shownText && !confirm('Resume the transcription?\n\nThe page will make the transcript again. Your changes to the transcript will be lost.')) return;
+  await run(job, provider);
+});
+
+// Transcribes the parts of the job that are not finished
+async function run(j, provider) {
+  job = null;
+  els.resume.classList.add('d-none');
   showError('');
   setBusy(true);
   controller = new AbortController();
@@ -330,13 +354,15 @@ els.transcribe.addEventListener('click', async () => {
   tick();
   const timer = setInterval(tick, 100);
 
-  const results = [];
-  let parts = [];
+  const { file, results } = j;
   let failure = null;
   try {
-    els.progressText.textContent = 'Reading file…';
-    parts = await splitMp3(file);
-    for (let i = 0; i < parts.length; i++) {
+    if (!j.parts) {
+      els.progressText.textContent = 'Reading file…';
+      j.parts = await splitMp3(file);
+    }
+    const parts = j.parts;
+    for (let i = results.length; i < parts.length; i++) {
       const prefix = parts.length > 1 ? `Part ${i + 1} of ${parts.length}: ` : '';
       els.progressText.textContent = `${prefix}waiting for OpenRouter…`;
       els.progressBar.style.width = `${((i + 1) / parts.length) * 100}%`;
@@ -362,7 +388,8 @@ els.transcribe.addEventListener('click', async () => {
     setBusy(false);
     updateButton();
   }
-  const elapsed = (performance.now() - started) / 1000;
+  j.elapsed += (performance.now() - started) / 1000;
+  const parts = j.parts || [];
 
   // Show the text of the finished parts, also when a later part failed
   if (results.length) {
@@ -375,8 +402,9 @@ els.transcribe.addEventListener('click', async () => {
     const hasSpeakers = results.some((r) => r.body.segments?.some((s) => s.speaker != null));
     els.transcript.value = results.map((r) => partText(r.body)).join(hasSpeakers ? '\n\n' : ' ');
     applyHeader();
+    shownText = els.transcript.value;
     unsaved = true;
-    renderStats(results, file, elapsed, parts.length);
+    renderStats(results, file, j.elapsed, parts.length);
     els.results.classList.remove('d-none');
     if (!failure) els.results.scrollIntoView({ behavior: 'smooth' });
   }
@@ -393,8 +421,15 @@ els.transcribe.addEventListener('click', async () => {
     }
     if (results.length) msg += ` The transcript below has only ${results.length} of ${parts.length} parts.`;
     showError(msg);
+
+    // Keep the job, so that Resume can continue from the failed part
+    if (parts.length) {
+      job = j;
+      els.resume.textContent = parts.length > 1 ? `Resume ${file.name} from part ${results.length + 1}` : `Try ${file.name} again`;
+      els.resume.classList.remove('d-none');
+    }
   }
-});
+}
 
 // Returns the text of one part. If the segments have speaker labels, each change of speaker starts a new paragraph.
 function partText(body) {
