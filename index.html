@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Teetor - MP3 Transcription</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎙️</text></svg>">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+        integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous">
+  <script>
+    document.documentElement.dataset.bsTheme = matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  </script>
+  <style>
+    .stat-value { font-size: 1.6rem; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+    .stat-label { font-size: .75rem; text-transform: uppercase; letter-spacing: .05em; }
+    #transcript { font-family: var(--bs-font-monospace); min-height: 20rem; }
+  </style>
+</head>
+<body class="bg-body-tertiary">
+  <main class="container py-4" style="max-width: 960px">
+    <h1 class="h3 mb-4">🎙️ Teetor <small class="text-body-secondary fs-6">MP3 transcription via OpenRouter</small></h1>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label for="apiKey" class="form-label">OpenRouter API key</label>
+            <div class="input-group">
+              <input type="password" class="form-control" id="apiKey" placeholder="sk-or-..." autocomplete="off">
+              <button class="btn btn-outline-secondary" type="button" id="toggleKey">Show</button>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <label for="model" class="form-label">Model</label>
+            <input type="text" class="form-control" id="model" placeholder="openai/whisper-1">
+          </div>
+          <div class="col-12">
+            <label for="audioFile" class="form-label">MP3 file</label>
+            <input type="file" class="form-control" id="audioFile" accept=".mp3,audio/mpeg">
+          </div>
+          <div class="col-md-8 d-flex align-items-center">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" role="switch" id="includeHeader">
+              <label class="form-check-label" for="includeHeader">Add filename and file date/time at top of text</label>
+            </div>
+          </div>
+          <div class="col-md-4 text-md-end">
+            <button class="btn btn-primary w-100" id="transcribe" disabled>
+              <span class="spinner-border spinner-border-sm d-none" id="spinner"></span>
+              <span id="transcribeLabel">Transcribe</span>
+            </button>
+          </div>
+        </div>
+        <div class="alert alert-danger mt-3 mb-0 d-none" id="error"></div>
+        <p class="form-text mb-0 mt-3">Your key and settings stay in this browser (localStorage). The audio goes directly to OpenRouter.</p>
+      </div>
+    </div>
+
+    <section id="results" class="d-none">
+      <h2 class="h5 mb-3">Statistics</h2>
+      <div class="row g-3 mb-3" id="statCards"></div>
+      <div class="card mb-4">
+        <ul class="list-group list-group-flush small" id="statDetails"></ul>
+      </div>
+
+      <div class="d-flex align-items-center mb-2">
+        <h2 class="h5 mb-0 me-auto">Transcript</h2>
+        <button class="btn btn-sm btn-outline-secondary me-2" id="copy">Copy</button>
+        <button class="btn btn-sm btn-success" id="download">Download .txt</button>
+      </div>
+      <textarea class="form-control" id="transcript" rows="16"></textarea>
+    </section>
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
