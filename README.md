@@ -44,6 +44,8 @@ OpenRouter does not accept large uploads. Also, providers stop a request after a
 
 To prevent a split in a word, the page decodes approximately 38 seconds of audio around each split point. It finds the quietest 500 ms and splits the file at the MP3 frame at that time. If the audio has no pause, the split can still be in a word.
 
+If a part gets a rate limit error (HTTP 429) or a server error (HTTP 5xx), the page waits and tries again. It waits 5, 15, 30 and 60 seconds before the retries. The progress panel shows the time until the next retry. The page does not try again for other errors, for example not enough credits.
+
 If a part fails, the page shows the text of the parts that are finished.
 
 ## Header

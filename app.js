@@ -287,8 +287,27 @@ async function transcribePart(blob, provider) {
     body: JSON.stringify({ model: els.model.value.trim(), input_audio: { data, format: 'mp3' }, provider }),
   });
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error?.message || `HTTP ${res.status} ${res.statusText}`);
+  if (!res.ok) {
+    const err = new Error(body.error?.message || `HTTP ${res.status} ${res.statusText}`);
+    // Rate limits (429) and server errors (5xx) are usually temporary
+    err.retry = res.status === 429 || res.status >= 500;
+    throw err;
+  }
   return { body, headers: res.headers };
+}
+
+// Seconds to wait before each retry of a part
+const RETRY_DELAYS = [5, 15, 30, 60];
+
+// Waits for the given milliseconds. Stops with an AbortError if you cancel.
+function wait(ms) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(resolve, ms);
+    controller.signal.addEventListener('abort', () => {
+      clearTimeout(t);
+      reject(new DOMException('Cancelled', 'AbortError'));
+    }, { once: true });
+  });
 }
 
 // Transcribe
@@ -321,7 +340,19 @@ els.transcribe.addEventListener('click', async () => {
       const prefix = parts.length > 1 ? `Part ${i + 1} of ${parts.length}: ` : '';
       els.progressText.textContent = `${prefix}waiting for OpenRouter…`;
       els.progressBar.style.width = `${((i + 1) / parts.length) * 100}%`;
-      results.push(await transcribePart(parts[i], provider));
+      for (let attempt = 0; ; attempt++) {
+        try {
+          results.push(await transcribePart(parts[i], provider));
+          break;
+        } catch (err) {
+          if (!err.retry || attempt >= RETRY_DELAYS.length) throw err;
+          for (let s = RETRY_DELAYS[attempt]; s > 0; s--) {
+            els.progressText.textContent = `${prefix}${err.message.replace(/\.?$/, '.')} Retry ${attempt + 1} of ${RETRY_DELAYS.length} in ${s} s…`;
+            await wait(1000);
+          }
+          els.progressText.textContent = `${prefix}waiting for OpenRouter (retry ${attempt + 1} of ${RETRY_DELAYS.length})…`;
+        }
+      }
     }
   } catch (err) {
     failure = err;
@@ -357,7 +388,7 @@ els.transcribe.addEventListener('click', async () => {
       // fetch() gives a TypeError when the browser blocks or loses the response
       msg = failure instanceof TypeError
         ? `The browser did not get a readable response from OpenRouter (network problem or timeout). Browser message: ${failure.message}.`
-        : `${failure.message.replace(/\.?$/, '.')}`;
+        : `${failure.message.replace(/\.?$/, '.')}${failure.retry ? ` The page tried again ${RETRY_DELAYS.length} times.` : ''}`;
       if (parts.length > 1) msg = `Part ${results.length + 1} of ${parts.length} failed: ${msg}`;
     }
     if (results.length) msg += ` The transcript below has only ${results.length} of ${parts.length} parts.`;
