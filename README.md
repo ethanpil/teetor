@@ -9,7 +9,7 @@ Live page: https://ethanpil.github.io/teetor/
 1. Open the page.
 2. Type your OpenRouter API key.
 3. Type the model name (for example, `openai/whisper-1`).
-4. Select an MP3 file.
+4. Select an MP3 file, or drag the file onto the page.
 5. Click **Transcribe**.
 6. Read and edit the text. Click **Download .txt** to save the text.
 

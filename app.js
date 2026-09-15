@@ -20,6 +20,23 @@ els.includeHeader.checked = localStorage.getItem('teetor.includeHeader') !== 'fa
 els.apiKey.addEventListener('input', () => { localStorage.setItem('teetor.apiKey', els.apiKey.value.trim()); updateButton(); });
 els.model.addEventListener('input', () => { localStorage.setItem('teetor.model', els.model.value.trim()); updateButton(); });
 els.file.addEventListener('change', updateButton);
+
+// Drag and drop
+const dropZone = $('dropZone');
+window.addEventListener('dragover', (e) => e.preventDefault());
+window.addEventListener('drop', (e) => e.preventDefault());
+dropZone.addEventListener('dragover', () => dropZone.classList.add('dragover'));
+dropZone.addEventListener('dragleave', (e) => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('dragover'); });
+dropZone.addEventListener('drop', (e) => {
+  dropZone.classList.remove('dragover');
+  const file = [...e.dataTransfer.files].find((f) => /\.mp3$/i.test(f.name) || f.type === 'audio/mpeg');
+  if (!file) return showError('Drop an MP3 file.');
+  showError('');
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  els.file.files = dt.files;
+  updateButton();
+});
 els.includeHeader.addEventListener('change', () => {
   localStorage.setItem('teetor.includeHeader', els.includeHeader.checked);
   applyHeader();
