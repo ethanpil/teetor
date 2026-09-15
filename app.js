@@ -35,6 +35,45 @@ els.apiKey.addEventListener('input', () => { localStorage.setItem('teetor.apiKey
 els.model.addEventListener('input', () => { localStorage.setItem('teetor.model', els.model.value.trim()); updateButton(); });
 els.file.addEventListener('change', updateButton);
 
+// Saved models: most recent first
+let models = JSON.parse(localStorage.getItem('teetor.models') || '[]');
+const modelPicker = $('modelPicker'), modelMenu = $('modelMenu'), modelMenuButton = $('modelMenuButton');
+
+function saveModels() {
+  localStorage.setItem('teetor.models', JSON.stringify(models));
+  $('modelList').replaceChildren(...models.map((m) => Object.assign(document.createElement('option'), { value: m })));
+  modelMenu.replaceChildren();
+  if (!models.length) {
+    modelMenu.innerHTML = '<li><span class="dropdown-item-text text-body-secondary small">No saved models. A model is saved after a transcription with it.</span></li>';
+  }
+  for (const m of models) {
+    const li = document.createElement('li');
+    li.className = 'd-flex align-items-center';
+    li.innerHTML = '<button type="button" class="dropdown-item text-truncate"></button><button type="button" class="btn-close btn-sm mx-2" title="Remove from saved models"></button>';
+    li.children[0].textContent = m;
+    li.children[0].addEventListener('click', () => {
+      els.model.value = m;
+      els.model.dispatchEvent(new Event('input'));
+      showModelMenu(false);
+    });
+    li.children[1].addEventListener('click', (e) => {
+      e.stopPropagation(); // Keep the menu open
+      models = models.filter((x) => x !== m);
+      saveModels();
+    });
+    modelMenu.appendChild(li);
+  }
+}
+saveModels();
+
+function showModelMenu(show) {
+  modelMenu.classList.toggle('show', show);
+  modelMenuButton.setAttribute('aria-expanded', show);
+}
+modelMenuButton.addEventListener('click', () => showModelMenu(!modelMenu.classList.contains('show')));
+document.addEventListener('click', (e) => { if (!modelPicker.contains(e.target)) showModelMenu(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') showModelMenu(false); });
+
 els.providerOptions.value = localStorage.getItem('teetor.providerOptions') || '';
 els.providerOptions.addEventListener('input', () => {
   localStorage.setItem('teetor.providerOptions', els.providerOptions.value);
@@ -286,6 +325,10 @@ els.transcribe.addEventListener('click', async () => {
 
   // Show the text of the finished parts, also when a later part failed
   if (results.length) {
+    const model = els.model.value.trim();
+    models = [model, ...models.filter((m) => m !== model)];
+    saveModels();
+
     baseName = file.name.replace(/\.[^.]+$/, '');
     header = `File: ${file.name}\nDate: ${formatDate(new Date(file.lastModified))}\n\n`;
     const hasSpeakers = results.some((r) => r.body.segments?.some((s) => s.speaker != null));

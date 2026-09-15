@@ -34,7 +34,14 @@
           </div>
           <div class="col-md-6">
             <label for="model" class="form-label">Model</label>
-            <input type="text" class="form-control" id="model" placeholder="openai/whisper-1">
+            <div class="position-relative" id="modelPicker">
+              <div class="input-group">
+                <input type="text" class="form-control" id="model" list="modelList" placeholder="openai/whisper-1" autocomplete="off">
+                <button class="btn btn-outline-secondary" type="button" id="modelMenuButton" title="Saved models" aria-expanded="false">▾</button>
+              </div>
+              <ul class="dropdown-menu w-100" id="modelMenu" style="top: 100%; right: 0"></ul>
+            </div>
+            <datalist id="modelList"></datalist>
           </div>
           <div class="col-12">
             <label for="providerOptions" class="form-label">Provider settings <span class="text-body-secondary">(optional)</span></label>
