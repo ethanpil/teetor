@@ -15,13 +15,20 @@ Live page: https://ethanpil.github.io/teetor/
 
 ## Provider settings
 
-You can type a JSON object in **Provider settings**. The page sends this object as the `provider` field of each request. OpenRouter sends only the options for the provider that does the transcription. For the provider names, see the endpoints API (`/api/v1/models/<model>/endpoints`).
+In **Provider settings**, type one option on each line in the format `path.to.option = value`. The page makes an object from the lines and sends it as the `provider` field of each request. The text below the field shows this object. OpenRouter sends only the options for the provider that does the transcription. For the provider names, see the endpoints API (`/api/v1/models/<model>/endpoints`).
 
 Example to identify speakers with Azure:
 
-```json
-{"options": {"azure": {"diarization": {"enabled": true}}}}
 ```
+options.azure.diarization.enabled = true
+```
+
+Rules:
+
+- The `provider.` at the start of a path is optional.
+- The values `true`, `false`, `null`, numbers, `"quoted text"` and `[lists]` are JSON values. All other values are text.
+- The page ignores empty lines and lines that start with `#`.
+- You can also type a full JSON object.
 
 If the response has speaker labels, the page starts a new paragraph for each change of speaker (for example, `Speaker 0: ...`). If the page divides the file into parts, the provider gives the speaker numbers again for each part. Thus, `Speaker 0` in one part is possibly not the same person as `Speaker 0` in a different part.
 

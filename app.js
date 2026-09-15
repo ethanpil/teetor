@@ -38,20 +38,36 @@ els.file.addEventListener('change', updateButton);
 els.providerOptions.value = localStorage.getItem('teetor.providerOptions') || '';
 els.providerOptions.addEventListener('input', () => {
   localStorage.setItem('teetor.providerOptions', els.providerOptions.value);
-  els.providerOptions.classList.toggle('is-invalid', parseProvider() === null);
+  let provider, error = '';
+  try { provider = parseProvider(); } catch (err) { error = err.message; }
+  els.providerOptions.classList.toggle('is-invalid', !!error);
+  $('providerError').textContent = error;
+  $('providerPreview').textContent = provider ? `provider: ${JSON.stringify(provider)}` : '';
 });
 els.providerOptions.dispatchEvent(new Event('input'));
 
-// Returns the provider settings object, undefined if the field is empty, or null if the JSON is not valid
+// Reads the provider settings. Each line is "path.to.option = value", for example
+// "options.azure.diarization.enabled = true". A JSON object is also accepted.
+// Returns undefined if the field is empty. Throws an error if the text is not valid.
 function parseProvider() {
-  const value = els.providerOptions.value.trim();
-  if (!value) return undefined;
-  try {
-    const obj = JSON.parse(value);
-    return obj && typeof obj === 'object' && !Array.isArray(obj) ? obj : null;
-  } catch {
-    return null;
+  const text = els.providerOptions.value.trim();
+  if (!text) return undefined;
+  if (text.startsWith('{')) return JSON.parse(text);
+
+  const provider = {};
+  for (const [n, raw] of text.split('\n').entries()) {
+    const line = raw.trim();
+    if (!line || line.startsWith('#')) continue;
+    const eq = line.indexOf('=');
+    const keys = line.slice(0, eq).trim().replace(/^provider\./, '').split('.');
+    if (eq < 0 || keys.some((k) => !k)) throw new Error(`Line ${n + 1}: use the format path.to.option = value`);
+    let obj = provider;
+    for (const k of keys.slice(0, -1)) obj = obj[k] = obj[k] && typeof obj[k] === 'object' ? obj[k] : {};
+    // true, false, null, numbers and quoted text are JSON values. Other values are text.
+    const value = line.slice(eq + 1).trim();
+    try { obj[keys.at(-1)] = JSON.parse(value); } catch { obj[keys.at(-1)] = value; }
   }
+  return provider;
 }
 
 // Drag and drop
@@ -231,8 +247,8 @@ async function transcribePart(blob, provider) {
 // Transcribe
 els.transcribe.addEventListener('click', async () => {
   const file = els.file.files[0];
-  const provider = parseProvider();
-  if (provider === null) return showError('Provider settings: this is not a valid JSON object.');
+  let provider;
+  try { provider = parseProvider(); } catch (err) { return showError(`Provider settings: ${err.message}`); }
   if (unsaved && !confirm('Start a new transcription?\n\nThe current transcript is not downloaded or copied. It will be lost.')) return;
   showError('');
   setBusy(true);
